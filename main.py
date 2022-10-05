@@ -25,13 +25,14 @@ new_model.summary()
 batch_size = 32
 img_height = 64
 img_width = 64
-activity_class_names = ['Assault', 'Burglary', 'NormalVideos', 'Robbery', 'Shooting', 'Stealing']
+activity_class_names = ["NotSuspicious","Suspicious"]
+# ['Assault', 'Burglary', 'NormalVideos', 'Robbery', 'Shooting', 'Stealing']
 
 
 dt = datetime.now()
 filename = "test-video.mp4"
 path = "./videos/"
-frames_per_second = 30.0
+frames_per_second = 25.0
 resolution = '480p'
 
 def Change_res(cap, width, height):
@@ -71,6 +72,8 @@ COLORS = [(255,0,0),(255,0,255),(0, 255, 255), (255, 255, 0), (0, 255, 0), (255,
 GREEN =(0,255,0)
 BLACK =(0,0,0)
 RED = (0,0,255)
+WHITE = (255,255,255)
+PAROT = (21,255,100)
  
 FONTS = cv.FONT_HERSHEY_COMPLEX
 # org
@@ -115,35 +118,48 @@ file_time = dt.strftime("%H_%M")
 fileName = "D_"+file_date+"T_"+file_time+".mp4"
 print(fileName)
 
-cap = cv.VideoCapture(0, cv.CAP_DSHOW)
+# cap = cv.VideoCapture(0, cv.CAP_DSHOW)
+cap = cv.VideoCapture("CCTV2.mp4")
 dims = get_dimensions(cap,res = resolution)
 Video_Type_Name = get_Video_Type(fileName)
 print(Video_Type_Name)
 rec = cv.VideoWriter(filename, Video_Type_Name, frames_per_second, dims)
 filterRec = cv.VideoWriter(fileName, Video_Type_Name, frames_per_second, dims)
+isPerson = False;
 
 while True:
     ret, frame = cap.read()
     rec.write(frame)
+    # cv.putText(frame, file_date+" "+file_time ,(5,150), FONTS, 0.5, RED, thickness)
     if(frame.all() != None):
-        data = object_detector(frame) 
-        # print(data)
+        data = object_detector(frame)
         if(data != None):
             for d in data:
                 if d[0] =='person':
                     x, y = d[2]
+                    cv.putText(frame, "Recording",(5,50), FONTS, 0.5, RED, thickness)
+                    filterRec.write(frame)
+                    isPerson = True
+                else:
+                    isPerson = False
+                    
                 # cv.rectangle(frame, (x, y-3), (x+150, y+100),BLACK,-1 )
-                cv.putText(frame, "Recording",(5,50), FONTS, 0.5, RED, thickness)
-                filterRec.write(frame)
+            if isPerson:    
+           
                 img = tf.image.resize(frame, (img_height, img_width))
                 img_array = tf.keras.utils.img_to_array(img)
                 img_array = tf.expand_dims(img_array, 0) # Create a batch
 
                 predictions = new_model.predict(img_array)
-                score = tf.nn.softmax(predictions[0])
+                score = tf.nn.sigmoid(predictions[0])
+
+                # print(predictions[0][0])
+                class_index = predictions[0][0] > 0.5 and 1 or 0
+                class_color = predictions[0][0] > 0.5 and RED or GREEN
 
                 cv.putText(frame, "{} with a {:.2f} percent confidence."
-                .format(activity_class_names[np.argmax(score)], 100 * np.max(score)),(5,15), FONTS, 0.5, BLACK, thickness)
+                .format(activity_class_names[class_index], 100 * np.max(score)),(5,15), FONTS, 0.5, class_color, thickness)
+       
         # print(
         #     "This image most likely belongs to {} with a {:.2f} percent confidence."
         #     .format(activity_class_names[np.argmax(score)], 100 * np.max(score))

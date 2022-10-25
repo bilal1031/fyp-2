@@ -49,15 +49,16 @@ VIDEOTYPES = {
     '.mp4' : cv.VideoWriter_fourcc(*'mp4v')
 } 
 
-CONFIDENCE_THRESHOLD = 0.3
+CONFIDENCE_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.3
+FONTSCALE = 1
 COLORS = [(255,0,0),(255,0,255),(0, 255, 255), (255, 255, 0), (0, 255, 0), (255, 0, 0)]
 GREEN =(0,255,0)
 BLACK =(0,0,0)
 RED = (0,0,255)
 WHITE = (255,255,255)
 PAROT = (21,255,100)
-FONTS = cv.FONT_HERSHEY_PLAIN
+FONTS = cv.FONT_HERSHEY_DUPLEX
 org = (50, 50)
 # fontScale
 fontScale = 1
@@ -91,7 +92,9 @@ def get_dimensions(cap, res = '1080'):
 def object_detector(image):
   classes, scores, boxes = yolo_trained_model.detect(image, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)
 #   print(classes, scores, boxes)
-  data_list =[]
+  data_list = []
+
+#   print(len(boxes))
   for (classid, score, box) in zip(classes, scores, boxes):
     color= COLORS[int(classid) % len(COLORS)]
     label = "%s : %f" % (class_names[classid], score)
@@ -102,23 +105,17 @@ def object_detector(image):
     # 1: class name  2: object width in pixels, 3: position where have to draw text(distance)
     if classid == 0: # person class id 
         data_list.append([class_names[classid], box[2], (box[0], box[1]-2)])
-    return data_list
+        
+  return data_list
 
-
-def every(delay, task):
-  next_time = time.time() + delay
-  while True:
-    time.sleep(max(0, next_time - time.time()))
-    try:
-      task()
-    except Exception:
-      traceback.print_exc()
-      # in production code you might want to have this instead of course:
-      # logger.exception("Problem while executing repetitive task.")
-    # skip tasks if we are behind schedule:
-    next_time += (time.time() - next_time) // delay * delay + delay
-
-
+def get_optimal_font_scale(text, width):
+    for scale in reversed(range(0, 60, 1)):
+        textSize = cv.getTextSize(text, fontFace=cv.FONT_HERSHEY_DUPLEX, fontScale=scale/10, thickness=1)
+        new_width = textSize[0][0]
+        if (new_width <= width):
+            # print(new_width)
+            return scale/10
+    return 1
 # -------------------------------------------------------------------------------------------
 
 file_date = date.strftime("%m_%d_%Y")
@@ -129,16 +126,18 @@ fileName = "D_"+file_date+"T_"+file_time+".mp4"
 
 # All you need to do when doing IP cam is to make VideoCapture(0) 
 # into VideoCapture("rtsp://username:password@ip-address") good luck
-cap = cv.VideoCapture(0, cv.CAP_DSHOW)
-# cap = cv.VideoCapture("CCTV2.mp4")
-
+# cap = cv.VideoCapture(0, cv.CAP_DSHOW)
+cap = cv.VideoCapture("CCTV2.ts")
+# cap = cv.VideoCapture("CCTVNORMAL.ts")
+# cap = cv.VideoCapture("CCTVWALK.webm")
 
 recording_video_dimensions = get_dimensions(cap,res = video_resolution)
 
 Video_Type_Name = get_Video_Type(fileName)
 recoder = cv.VideoWriter(path+filename, Video_Type_Name, frames_per_second, recording_video_dimensions)
 filterRec = cv.VideoWriter(path+fileName, Video_Type_Name, frames_per_second, recording_video_dimensions)
-isPerson = False;
+isPerson = False
+record = False
 
 
 print(path+filename, Video_Type_Name, frames_per_second, recording_video_dimensions)
@@ -172,22 +171,26 @@ while True:
     # saving the frames into the video
     recoder.write(frame)
     
+    if(record):
+        filterRec.write(frame)
 
     
     # cv.putText(frame, file_date+" "+file_time ,(5,150), FONTS, 0.5, RED, thickness)
     if(frame.all() != None):
         detected_objects = object_detector(frame)
-        
+
         if(detected_objects != None):
             for d in detected_objects:
                 if d[0] =='person':
                     x, y = d[2]
-                    cv.putText(frame, "Recording",(5,50), FONTS, 0.5, RED, thickness)
-                    filterRec.write(frame)
                     isPerson = True
+                    if(record == False):
+                        cv.putText(frame, "Recording",(5,50), FONTS, FONTSCALE, RED, thickness)
+                        record = True
                 else:
                     isPerson = False
-                    
+                    record = False
+
                 # cv.rectangle(frame, (x, y-3), (x+150, y+100),BLACK,-1 )
             if isPerson:    
                 
@@ -200,11 +203,17 @@ while True:
                 score = tf.nn.sigmoid(predictions[0])
 
                 # print(predictions[0][0])
-                prediction_class_index = predictions[0][0] > 0.5 and 1 or 0
-                prediction_class_color = predictions[0][0] > 0.5 and RED or GREEN
-
+                classes = np.where(predictions> 0.5, 1,0)
+                prediction_class_color = np.max(classes) > 0.5 and RED or GREEN
+                if(record == False and np.max(classes) > 0.5):
+                    scale = get_optimal_font_scale("Recording", frame.shape[1])
+                    cv.putText(frame, "Recording",(5,50), FONTS, scale, RED, thickness)
+                    record = True
+                else:
+                    record = False
+                    
                 cv.putText(frame, "{} with a {:.2f} percent confidence."
-                .format(activity_class_names[prediction_class_index], 100 * np.max(score)),(5,15), FONTS, 0.5, prediction_class_color, thickness)
+                .format(activity_class_names[np.max(classes)], 100 * np.max(score)),(5,15), FONTS, FONTSCALE, prediction_class_color, thickness)
 
         # print(
         #     "This image most likely belongs to {} with a {:.2f} percent confidence."

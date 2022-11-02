@@ -1,3 +1,4 @@
+from this import s
 import numpy as np
 import cv2 as cv
 import os
@@ -11,7 +12,9 @@ import logging
 import threading
 import time, traceback
 from multiprocessing import Process
-
+import queue
+import json
+import requests
 
 
 from tensorflow import keras
@@ -116,6 +119,10 @@ def get_optimal_font_scale(text, width):
             # print(new_width)
             return scale/10
     return 1
+
+            
+        
+
 # -------------------------------------------------------------------------------------------
 
 file_date = date.strftime("%m_%d_%Y")
@@ -138,7 +145,8 @@ recoder = cv.VideoWriter(path+filename, Video_Type_Name, frames_per_second, reco
 filterRec = cv.VideoWriter(path+fileName, Video_Type_Name, frames_per_second, recording_video_dimensions)
 isPerson = False
 record = False
-
+isSuspicious = False
+start_time = 0
 
 print(path+filename, Video_Type_Name, frames_per_second, recording_video_dimensions)
 
@@ -162,7 +170,6 @@ yolo_trained_model.setInputParams(size=(416, 416), scale=1/255, swapRB=True)
 # print(class_names)
 
 
-    
 
 while True:
     # reading the frames from the video or camera
@@ -205,12 +212,23 @@ while True:
                 # print(predictions[0][0])
                 classes = np.where(predictions> 0.5, 1,0)
                 prediction_class_color = np.max(classes) > 0.5 and RED or GREEN
-                if(record == False and np.max(classes) > 0.5):
+                
+                if np.max(classes) > 0.5:
+                    isSuspicious = True
+                    if(start_time == 0):
+                        start_time = time.time()                  
+                else:             
+                    isSuspicious = False
+                    start_time = 0
+                    
+                    
+                if record == False and isSuspicious == True:
                     scale = get_optimal_font_scale("Recording", frame.shape[1])
-                    cv.putText(frame, "Recording",(5,50), FONTS, scale, RED, thickness)
-                    record = True
+                    cv.putText(frame, "S_Recording",(5,50), FONTS, scale, RED, thickness)
+                    record = True                   
                 else:
                     record = False
+                
                     
                 cv.putText(frame, "{} with a {:.2f} percent confidence."
                 .format(activity_class_names[np.max(classes)], 100 * np.max(score)),(5,15), FONTS, FONTSCALE, prediction_class_color, thickness)
@@ -219,9 +237,28 @@ while True:
         #     "This image most likely belongs to {} with a {:.2f} percent confidence."
         #     .format(activity_class_names[np.argmax(score)], 100 * np.max(score))
         # )
-
+    
+    # if isSuspicious == True and it is more than 3 seconds 
+    # then send the alert to the user
+    if isSuspicious and time.time() - start_time > 3:
+        # Send Alert
+        print("Alert",time.time())                   
+        start_time = 0
+        
     frame = cv.resize(frame, DIMENSIONS["480p"])
     cv.imshow('frame',frame)
+    
+    
+    # content_type = 'image/jpeg'
+    # headers = {'content-type': content_type}
+    # addr = 'http://localhost:5000'
+    # test_url = addr + '/api/test'
+    
+    
+    # _, img_encoded = cv.imencode('.jpg', frame)
+    # response = requests.post(test_url, data=img_encoded.tostring(), headers=headers)
+    # decode response
+    # print(json.loads(response.text))
     
     key = cv.waitKey(1)
     if key == ord('q'):

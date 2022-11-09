@@ -1,4 +1,3 @@
-from this import s
 import numpy as np
 import cv2 as cv
 import os
@@ -11,29 +10,35 @@ import tensorflow as tf
 import logging
 import threading
 import time, traceback
-from multiprocessing import Process
-import queue
-import json
-import requests
+import base64
+from time import sleep
+import cv2
+import io
+import socket
+import struct
+import pickle
+import socketio #python-socketio by @miguelgrinberg
+
+
 
 
 from tensorflow import keras
-import firebase_admin
-from firebase_admin import credentials, initialize_app, storage, firestore
+# import firebase_admin
+# from firebase_admin import credentials, initialize_app, storage, firestore
 # import PIL
 # from tensorflow.keras import layers
 # from tensorflow.keras.models import Sequential
 
-cred = credentials.Certificate("smart-home-surveillance-system-firebase-adminsdk-q8gq5-f21253b372.json")
-initialize_app(cred ,{'storageBucket': 'smart-home-surveillance-system.appspot.com'})
-db = firestore.client()
+# cred = credentials.Certificate("smart-home-surveillance-system-firebase-adminsdk-q8gq5-f21253b372.json")
+# initialize_app(cred ,{'storageBucket': 'smart-home-surveillance-system.appspot.com'})
+# db = firestore.client()
 
 #! Variables, constants and paths
 activity_class_names = ["NotSuspicious","Suspicious"]
 date = datetime.now()
 filename = "test-video.mp4"
 path = "./videos/"
-frames_per_second = 10
+frames_per_second = 30
 video_resolution = '720p'
 
 batch_size = 32
@@ -120,9 +125,15 @@ def get_optimal_font_scale(text, width):
             return scale/10
     return 1
 
+def stream_video(frame,sio):
+    res, frame = cv.imencode('.jpg', frame)   
+    data = base64.b64encode(frame)              # convert to base64 format
+    # print(data)
+    if(sio.connected):
+      sio.emit('data', data,namespace='/videoSender')  
+         
+    exit(0)
             
-        
-
 # -------------------------------------------------------------------------------------------
 
 file_date = date.strftime("%m_%d_%Y")
@@ -130,11 +141,12 @@ file_time = date.strftime("%H_%M")
 fileName = "D_"+file_date+"T_"+file_time+".mp4"
 
 
-
+sio = socketio.Client()
+sio.connect('https://ba34-39-46-91-14.in.ngrok.io',namespaces=['/videoSender'])
 # All you need to do when doing IP cam is to make VideoCapture(0) 
 # into VideoCapture("rtsp://username:password@ip-address") good luck
-# cap = cv.VideoCapture(0, cv.CAP_DSHOW)
-cap = cv.VideoCapture("CCTV2.ts")
+cap = cv.VideoCapture(0, cv.CAP_DSHOW)
+# cap = cv.VideoCapture("CCTV2.ts")
 # cap = cv.VideoCapture("CCTVNORMAL.ts")
 # cap = cv.VideoCapture("CCTVWALK.webm")
 
@@ -168,6 +180,9 @@ yolo_trained_model.setInputParams(size=(416, 416), scale=1/255, swapRB=True)
 # Show the model architecture
 # my_trained_model.summary()
 # print(class_names)
+
+# -------------------------------------------------------------------------------------------
+
 
 
 
@@ -246,8 +261,9 @@ while True:
         start_time = 0
         
     frame = cv.resize(frame, DIMENSIONS["480p"])
+    threading.Thread(target=stream_video, args=(frame,sio)).start()
     cv.imshow('frame',frame)
-    
+    # from image to binary buffer
     
     # content_type = 'image/jpeg'
     # headers = {'content-type': content_type}
@@ -264,6 +280,7 @@ while True:
     if key == ord('q'):
         break
 
+sio.disconnect()
 cap.release()
 recoder.release()
 filterRec.release()
